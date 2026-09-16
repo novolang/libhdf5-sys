@@ -1,0 +1,45 @@
+[package]
+name        = "libhdf5-sys"
+version     = "0.1.0"
+description = "Bindings over libhdf5, the HDF5 C library: the library itself, the error stack, the file, the group and its links, the dataspace with its hyperslab, the dataset, the attribute and the datatype, one declaration per C entry point."
+license     = "Apache-2.0"
+
+# NOT a `0.0.x` draft.  An interface release is the shape whose every
+# `pub fn` body is a `todo()`, and every `pub fn` here is an `@ffi`
+# declaration with no body at all — `novo pkg publish` reads that as a
+# release with bodies and refuses a `0.0.x` version for it.
+stability   = "experimental"
+
+# `sys`: the layer for a package that binds one C library and decides
+# nothing of its own.  Every `pub fn` below is an `@ffi` declaration of
+# a function in libhdf5.
+layer       = "sys"
+
+category    = "bindings"
+
+# The one C library.  `libhdf5.so` is what the loader resolves these
+# symbols against; installing this package does not install it.
+wraps       = "libhdf5"
+
+tags        = ["ffi", "hdf5", "h5", "scientific-data", "file-format", "bindings"]
+repository  = "https://github.com/novolang/libhdf5-sys"
+maintainers = ["novo-lang"]
+novo        = ">= 0.8.9"
+
+[docs.pages]
+"README.md" = "The C entry points of libhdf5, one novo-lang declaration each"
+
+[dependencies]
+# None.  A binding over one C library depends on no novo-lang package.
+
+# The link flag for the `library = "hdf5"` name every declaration in
+# `src/` carries.  The upstream build installs
+# `/usr/lib/<arch>/pkgconfig/hdf5.pc`, so pkg-config answers `-lhdf5`.
+# Debian and Ubuntu split the package by build: `libhdf5-dev` installs
+# `hdf5-serial.pc` beside `hdf5.pc`, and the parallel builds install
+# `hdf5-openmpi.pc` and `hdf5-mpich.pc`.  A program that wants one of
+# those names it here instead.  Without the block the default is
+# `-lhdf5`, which is the same flag on a system that put the library
+# somewhere the linker already looks.
+[ffi.hdf5]
+pkg_config = "hdf5"

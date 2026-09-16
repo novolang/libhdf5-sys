@@ -1,0 +1,385 @@
+// The C entry points of libhdf5, one novo-lang declaration each.
+//
+// Every object HDF5 hands out — a file, a group, a dataset, an
+// attribute, a dataspace, a datatype — is an `hid_t`, which is a signed
+// 64-bit integer from HDF5 1.10 onwards.  It crosses as an `Int`
+// unchanged.  A negative `hid_t` is a failure, and so is a negative
+// `herr_t`, which is the C `int` most calls answer.
+//
+// A `hsize_t` is an unsigned 64-bit count of elements, and a dimension
+// list is a run of them in memory: the caller reserves `8 * rank` bytes
+// with `ptr.alloc` and writes each one with `ptr.write_word`.
+//
+// A `herr_t` and an `htri_t` are both a C `int`, which is 32 bits wide.
+// Write `as i32` before comparing one with a negative number: an
+// `htri_t` is 1 for yes, 0 for no and negative for a failure, and that
+// last case is missed by a comparison against an un-narrowed value.
+//
+// The predefined datatypes — `H5T_NATIVE_INT`, `H5T_IEEE_F64LE` and
+// their neighbours — and the property list classes are C GLOBAL
+// VARIABLES behind macros, not functions, so no declaration can reach
+// them.  What that leaves a program able to do is the subject of the
+// README's "What is not included".
+//
+// The names ending in a digit are the real symbols.  `H5Gcreate`,
+// `H5Dopen`, `H5Acreate`, `H5Eclear` and `H5Eprint` are C macros that
+// expand to the numbered form, and a macro is not a symbol a binding
+// can resolve.
+
+// ---------------------------------------------------------------------
+// The library and its identifiers.
+// ---------------------------------------------------------------------
+
+// Initialise the HDF5 library.
+//
+// Every other entry point does this for itself, so a program only needs
+// the call when it wants the initialisation to happen at a moment of
+// its choosing. Answers a negative number on failure.
+pub @ffi(library = "hdf5", symbol = "H5open")
+fn h5_open() -> Int [io, ffi]
+
+// Shut the HDF5 library down and release everything it holds.
+//
+// Any object still open is flushed and closed first. A later call to
+// any other entry point starts the library again.
+pub @ffi(library = "hdf5", symbol = "H5close")
+fn h5_close() -> Int [io, ffi]
+
+// Read the library's version into three caller-owned slots.
+//
+// Each of `major`, `minor` and `release` is the address of a slot
+// holding a C `unsigned`, which is four bytes. `ptr.alloc_word` gives
+// an eight-byte slot that is zeroed, so reading it back with
+// `ptr.read_word` answers the four-byte value.
+pub @ffi(library = "hdf5", symbol = "H5get_libversion")
+fn h5_get_libversion(major: Int, minor: Int, release: Int) -> Int [io, ffi]
+
+// Ask whether an identifier is still open.
+//
+// Answers 1 when it is, 0 when it is not, and a negative number when
+// the value was never an identifier.
+pub @ffi(library = "hdf5", symbol = "H5Iis_valid")
+fn h5i_is_valid(id: Int) -> Int [ffi]
+
+// ---------------------------------------------------------------------
+// The error stack.
+// ---------------------------------------------------------------------
+
+// Empty an error stack.
+//
+// Pass 0 for `H5E_DEFAULT`, which is the stack of the calling thread.
+pub @ffi(library = "hdf5", symbol = "H5Eclear2")
+fn h5e_clear2(err_stack: Int) -> Int [ffi]
+
+// Print an error stack, innermost failure last.
+//
+// `err_stack` is 0 for the calling thread's own stack, and `stream` is
+// the address of a C `FILE`. Pass 0 there for the standard error
+// stream, which is the only one a program has an address for.
+pub @ffi(library = "hdf5", symbol = "H5Eprint2")
+fn h5e_print2(err_stack: Int, stream: Int) -> Int [io, ffi]
+
+// ---------------------------------------------------------------------
+// The file.
+// ---------------------------------------------------------------------
+
+// Create a file and answer its identifier.
+//
+// `flags` is 2 to overwrite an existing file and 4 to fail when one
+// exists. `fcpl_id` and `fapl_id` are property lists; pass 0 for
+// `H5P_DEFAULT`. Answers a negative number on failure.
+pub @ffi(library = "hdf5", symbol = "H5Fcreate")
+fn h5f_create(name: Str, flags: Int, fcpl_id: Int, fapl_id: Int) -> Int [io, ffi]
+
+// Open an existing file and answer its identifier.
+//
+// `flags` is 0 to open for reading and 1 to open for reading and
+// writing. Pass 0 for `fapl_id`.
+pub @ffi(library = "hdf5", symbol = "H5Fopen")
+fn h5f_open(name: Str, flags: Int, fapl_id: Int) -> Int [io, ffi]
+
+// Close a file.
+//
+// The file is not on disk in full until every object inside it is
+// closed as well. Answers a negative number on failure.
+pub @ffi(library = "hdf5", symbol = "H5Fclose")
+fn h5f_close(file_id: Int) -> Int [io, ffi]
+
+// Write everything buffered for a file out to disk.
+//
+// `object_id` may be the file or anything inside it. `scope` is 0 for
+// this file alone and 1 for every file it is mounted with.
+pub @ffi(library = "hdf5", symbol = "H5Fflush")
+fn h5f_flush(object_id: Int, scope: Int) -> Int [io, ffi]
+
+// Ask whether a path names an HDF5 file.
+//
+// Answers 1 when the first bytes of the file are the HDF5 signature, 0
+// when they are not, and a negative number when the file cannot be
+// read at all.
+pub @ffi(library = "hdf5", symbol = "H5Fis_hdf5")
+fn h5f_is_hdf5(name: Str) -> Int [io, ffi]
+
+// Read the size of a file in bytes into a caller-owned slot.
+//
+// `size` is the address of an eight-byte slot. The answer is the size
+// of the whole file, including the parts HDF5 has reserved and not yet
+// used.
+pub @ffi(library = "hdf5", symbol = "H5Fget_filesize")
+fn h5f_get_filesize(file_id: Int, size: Int) -> Int [io, ffi]
+
+// ---------------------------------------------------------------------
+// The group and its links.
+// ---------------------------------------------------------------------
+
+// Create a group and answer its identifier.
+//
+// `loc_id` is the file or a group already open, and `name` is a path
+// below it. The three property lists are 0 for `H5P_DEFAULT`. Creating
+// `/a/b` needs `/a` to exist already.
+pub @ffi(library = "hdf5", symbol = "H5Gcreate2")
+fn h5g_create2(loc_id: Int, name: Str, lcpl_id: Int, gcpl_id: Int, gapl_id: Int) -> Int [io, ffi]
+
+// Open an existing group and answer its identifier.
+pub @ffi(library = "hdf5", symbol = "H5Gopen2")
+fn h5g_open2(loc_id: Int, name: Str, gapl_id: Int) -> Int [io, ffi]
+
+// Close a group.
+pub @ffi(library = "hdf5", symbol = "H5Gclose")
+fn h5g_close(group_id: Int) -> Int [io, ffi]
+
+// Ask whether a link of that name exists below `loc_id`.
+//
+// Answers 1 when it does, 0 when it does not, and a negative number
+// when a component of the path is missing. A link is what a group holds:
+// it names a group, a dataset or a committed datatype.
+pub @ffi(library = "hdf5", symbol = "H5Lexists")
+fn h5l_exists(loc_id: Int, name: Str, lapl_id: Int) -> Int [io, ffi]
+
+// Remove a link.
+//
+// The object the link named is removed with it when this was the last
+// link to it. The bytes it occupied are not returned to the operating
+// system: an HDF5 file does not shrink.
+pub @ffi(library = "hdf5", symbol = "H5Ldelete")
+fn h5l_delete(loc_id: Int, name: Str, lapl_id: Int) -> Int [io, ffi]
+
+// ---------------------------------------------------------------------
+// The dataspace.
+// ---------------------------------------------------------------------
+
+// Create a dataspace of a given class and answer its identifier.
+//
+// `space_class` is 0 for a scalar space, which holds exactly one
+// element and is what most attributes want, 1 for a simple space, and 2
+// for a null space, which holds none.
+pub @ffi(library = "hdf5", symbol = "H5Screate")
+fn h5s_create(space_class: Int) -> Int [ffi]
+
+// Create a simple dataspace of `rank` dimensions.
+//
+// `dims` is the address of `rank` eight-byte counts, and `max_dims` is
+// the address of `rank` more giving the largest each dimension may grow
+// to. Pass 0 for `max_dims` to fix the size at `dims`.
+pub @ffi(library = "hdf5", symbol = "H5Screate_simple")
+fn h5s_create_simple(rank: Int, dims: Int, max_dims: Int) -> Int [ffi]
+
+// Close a dataspace.
+pub @ffi(library = "hdf5", symbol = "H5Sclose")
+fn h5s_close(space_id: Int) -> Int [ffi]
+
+// Get how many dimensions a dataspace has.
+//
+// The answer is a C `int`, and it is negative on failure. A scalar
+// dataspace answers 0.
+pub @ffi(library = "hdf5", symbol = "H5Sget_simple_extent_ndims")
+fn h5s_get_simple_extent_ndims(space_id: Int) -> Int [ffi]
+
+// Read a dataspace's dimensions into caller-owned slots.
+//
+// `dims` and `max_dims` are each the address of as many eight-byte
+// slots as the space has dimensions, and either may be 0 to skip it.
+// Answers the number of dimensions written, or a negative number.
+pub @ffi(library = "hdf5", symbol = "H5Sget_simple_extent_dims")
+fn h5s_get_simple_extent_dims(space_id: Int, dims: Int, max_dims: Int) -> Int [ffi]
+
+// Get how many elements a dataspace holds in total.
+//
+// That is the product of its dimensions. A scalar dataspace answers 1.
+pub @ffi(library = "hdf5", symbol = "H5Sget_simple_extent_npoints")
+fn h5s_get_simple_extent_npoints(space_id: Int) -> Int [ffi]
+
+// Select a rectangular block of a dataspace.
+//
+// `op` is 0 to replace the selection and 1 to add to it. `start`,
+// `stride`, `count` and `block` are each the address of as many
+// eight-byte counts as the space has dimensions; `stride` and `block`
+// may be 0, which means one element at a time with no gaps. The
+// selection is what a later read or write moves.
+pub @ffi(library = "hdf5", symbol = "H5Sselect_hyperslab")
+fn h5s_select_hyperslab(space_id: Int, op: Int, start: Int, stride: Int, count: Int,
+                        block: Int) -> Int [ffi]
+
+// ---------------------------------------------------------------------
+// The dataset.
+// ---------------------------------------------------------------------
+
+// Create a dataset and answer its identifier.
+//
+// `type_id` is the datatype every element has and `space_id` is the
+// shape. The three property lists are 0 for `H5P_DEFAULT`. The
+// datatype must come from `H5Tcreate` or from a dataset already in a
+// file: the predefined ones are global variables this package cannot
+// reach.
+pub @ffi(library = "hdf5", symbol = "H5Dcreate2")
+fn h5d_create2(loc_id: Int, name: Str, type_id: Int, space_id: Int, lcpl_id: Int, dcpl_id: Int,
+               dapl_id: Int) -> Int [io, ffi]
+
+// Open an existing dataset and answer its identifier.
+pub @ffi(library = "hdf5", symbol = "H5Dopen2")
+fn h5d_open2(loc_id: Int, name: Str, dapl_id: Int) -> Int [io, ffi]
+
+// Close a dataset.
+pub @ffi(library = "hdf5", symbol = "H5Dclose")
+fn h5d_close(dset_id: Int) -> Int [io, ffi]
+
+// Read a dataset into the caller's memory, converting as it goes.
+//
+// `mem_type_id` is the datatype the bytes are wanted in and HDF5
+// converts from the one in the file. `mem_space_id` and `file_space_id`
+// are 0 for `H5S_ALL`, which reads the whole of both. `dxpl_id` is 0.
+// `buf` is the address of at least as many bytes as the elements need.
+pub @ffi(library = "hdf5", symbol = "H5Dread")
+fn h5d_read(dset_id: Int, mem_type_id: Int, mem_space_id: Int, file_space_id: Int, dxpl_id: Int,
+            buf: Int) -> Int [io, ffi]
+
+// Write the caller's memory into a dataset, converting as it goes.
+//
+// The arguments are those of `H5Dread`, and `buf` is read rather than
+// written.
+pub @ffi(library = "hdf5", symbol = "H5Dwrite")
+fn h5d_write(dset_id: Int, mem_type_id: Int, mem_space_id: Int, file_space_id: Int, dxpl_id: Int,
+             buf: Int) -> Int [io, ffi]
+
+// Get a copy of a dataset's dataspace.
+//
+// The answer is a new identifier the caller closes with `H5Sclose`.
+pub @ffi(library = "hdf5", symbol = "H5Dget_space")
+fn h5d_get_space(dset_id: Int) -> Int [io, ffi]
+
+// Get a copy of a dataset's datatype.
+//
+// The answer is a new identifier the caller closes with `H5Tclose`.
+// This is where a program that did not create the dataset gets a
+// datatype it can hand back to `H5Dread`.
+pub @ffi(library = "hdf5", symbol = "H5Dget_type")
+fn h5d_get_type(dset_id: Int) -> Int [io, ffi]
+
+// Get how many bytes a dataset occupies in the file.
+//
+// For a compressed dataset that is the compressed size, so it is
+// smaller than the elements would need in memory. Answers 0 when
+// nothing has been written yet.
+pub @ffi(library = "hdf5", symbol = "H5Dget_storage_size")
+fn h5d_get_storage_size(dset_id: Int) -> Int [io, ffi]
+
+// ---------------------------------------------------------------------
+// The attribute.
+// ---------------------------------------------------------------------
+
+// Create an attribute on an object and answer its identifier.
+//
+// `loc_id` is a file, a group or a dataset. An attribute is a small
+// named value carried beside an object, and it is read and written
+// whole.
+pub @ffi(library = "hdf5", symbol = "H5Acreate2")
+fn h5a_create2(loc_id: Int, attr_name: Str, type_id: Int, space_id: Int, acpl_id: Int,
+               aapl_id: Int) -> Int [io, ffi]
+
+// Open an existing attribute by name and answer its identifier.
+pub @ffi(library = "hdf5", symbol = "H5Aopen")
+fn h5a_open(obj_id: Int, attr_name: Str, aapl_id: Int) -> Int [io, ffi]
+
+// Close an attribute.
+pub @ffi(library = "hdf5", symbol = "H5Aclose")
+fn h5a_close(attr_id: Int) -> Int [io, ffi]
+
+// Read the whole of an attribute into the caller's memory.
+//
+// An attribute has no partial access: there is no selection argument
+// and the whole value moves.
+pub @ffi(library = "hdf5", symbol = "H5Aread")
+fn h5a_read(attr_id: Int, type_id: Int, buf: Int) -> Int [io, ffi]
+
+// Write the whole of an attribute from the caller's memory.
+pub @ffi(library = "hdf5", symbol = "H5Awrite")
+fn h5a_write(attr_id: Int, type_id: Int, buf: Int) -> Int [io, ffi]
+
+// Ask whether an object carries an attribute of that name.
+//
+// Answers 1 when it does, 0 when it does not, and a negative number on
+// failure.
+pub @ffi(library = "hdf5", symbol = "H5Aexists")
+fn h5a_exists(obj_id: Int, attr_name: Str) -> Int [io, ffi]
+
+// Get a copy of an attribute's datatype.
+//
+// The answer is a new identifier the caller closes with `H5Tclose`.
+pub @ffi(library = "hdf5", symbol = "H5Aget_type")
+fn h5a_get_type(attr_id: Int) -> Int [io, ffi]
+
+// ---------------------------------------------------------------------
+// The datatype.
+// ---------------------------------------------------------------------
+
+// Create a datatype of a class that has to be built rather than named.
+//
+// `type_class` is 3 for a fixed-length string, 5 for an opaque block, 6
+// for a compound type and 8 for an enumeration; no other class may be
+// created this way. `size` is the number of bytes one element occupies.
+// This is the one route to a datatype that does not begin with a
+// dataset already in a file.
+pub @ffi(library = "hdf5", symbol = "H5Tcreate")
+fn h5t_create(type_class: Int, size: Int) -> Int [ffi]
+
+// Copy a datatype and answer a new identifier for the copy.
+//
+// A datatype that came out of a file is read-only; the copy can be
+// changed.
+pub @ffi(library = "hdf5", symbol = "H5Tcopy")
+fn h5t_copy(type_id: Int) -> Int [ffi]
+
+// Close a datatype.
+pub @ffi(library = "hdf5", symbol = "H5Tclose")
+fn h5t_close(type_id: Int) -> Int [ffi]
+
+// Get how many bytes one element of a datatype occupies.
+//
+// Answers 0 on failure, because the count is a `size_t` and has no
+// negative value to report one with.
+pub @ffi(library = "hdf5", symbol = "H5Tget_size")
+fn h5t_get_size(type_id: Int) -> Int [ffi]
+
+// Set how many bytes one element of a datatype occupies.
+//
+// This is how the length of a fixed-length string type is set. The
+// datatype must be one the caller owns rather than one a file handed
+// out.
+pub @ffi(library = "hdf5", symbol = "H5Tset_size")
+fn h5t_set_size(type_id: Int, size: Int) -> Int [ffi]
+
+// Get which class a datatype belongs to.
+//
+// The answer is a C `int`: 0 is an integer, 1 a floating-point number,
+// 3 a string, 5 an opaque block, 6 a compound type, 8 an enumeration, 9
+// a variable-length type and 10 an array. -1 is the failure.
+pub @ffi(library = "hdf5", symbol = "H5Tget_class")
+fn h5t_get_class(type_id: Int) -> Int [ffi]
+
+// Ask whether two datatypes are the same type.
+//
+// Answers 1 when they are, 0 when they are not, and a negative number
+// on failure. Two identifiers for the same type are equal whether or
+// not they are the same identifier.
+pub @ffi(library = "hdf5", symbol = "H5Tequal")
+fn h5t_equal(type1_id: Int, type2_id: Int) -> Int [ffi]

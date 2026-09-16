@@ -1,0 +1,313 @@
+// API tests for the HDF5 bindings.
+//
+// Every test below calls into the C library, so the suite needs HDF5
+// installed and linked.  `novo pkg build` type-checks the declarations
+// without it; `novo test` runs them and does not.
+//
+// Every file the suite writes is made under a fresh directory from
+// `fs.temp_dir` and deleted again, and nothing reaches the network.
+//
+// HDF5 was not installed on the machine where this package was written,
+// so the suite has never been linked.  Treat every assertion below as
+// unmeasured.
+
+use std.test
+use libhdf5
+
+// `H5F_ACC_TRUNC`, `H5F_ACC_RDONLY` and `H5F_ACC_RDWR`.
+const ACC_TRUNC: Int = 2
+const ACC_RDONLY: Int = 0
+const ACC_RDWR: Int = 1
+
+// `H5P_DEFAULT`, and `H5S_ALL`, which have the same value.
+const DEFAULT: Int = 0
+const S_ALL: Int = 0
+
+// `H5S_SCALAR` and `H5S_SIMPLE`.
+const S_SCALAR: Int = 0
+const S_SIMPLE: Int = 1
+
+// `H5S_SELECT_SET`.
+const SELECT_SET: Int = 0
+
+// `H5T_STRING`, the one class of datatype this package can build.
+const T_STRING: Int = 3
+
+// `H5F_SCOPE_LOCAL`.
+const SCOPE_LOCAL: Int = 0
+
+// `H5E_DEFAULT`, the calling thread's own error stack.
+const E_DEFAULT: Int = 0
+
+// Three four-byte strings, which is what every dataset below holds.
+const ELEMENT_SIZE: Int = 4
+const ELEMENT_COUNT: Int = 3
+const CONTENT: Str = "onexrwoxthre"
+
+// Reserve a list of `hsize_t` counts holding the single value `n`.
+fn one_dim(n: Int) -> Int
+    let dims = ptr.alloc(8)
+    ptr.write_word(dims, n)
+    return dims
+
+// A fixed-length string datatype of `ELEMENT_SIZE` bytes.
+fn string_type() -> Int [ffi]
+    let t = libhdf5.h5t_create(T_STRING, ELEMENT_SIZE)
+    return t
+
+// A path inside a fresh temporary directory.
+fn scratch_file(name: Str) -> Str [fs]
+    return fs.temp_dir() + "/" + name
+
+// The library answers a version, and the three parts of it are counts.
+@test
+fn test_the_library_reports_its_version() [io, fs, ffi]
+    test.case("H5open, H5get_libversion")
+    test.assert(libhdf5.h5_open() as i32 >= 0)
+    let major = ptr.alloc_word()
+    let minor = ptr.alloc_word()
+    let release = ptr.alloc_word()
+    test.assert(libhdf5.h5_get_libversion(major, minor, release) as i32 >= 0)
+    // HDF5 1.10 is where `hid_t` became 64 bits wide.
+    test.assert(ptr.read_word(major) >= 1)
+    test.assert(ptr.read_word(minor) >= 0)
+    test.assert(ptr.read_word(release) >= 0)
+    ptr.free(release)
+    ptr.free(minor)
+    ptr.free(major)
+
+// A dataspace reports its rank, its dimensions and how many elements it
+// holds, and a scalar one holds exactly one.
+@test
+fn test_a_dataspace_reports_its_shape() [io, fs, ffi]
+    test.case("H5Screate, H5Screate_simple and the three extent queries")
+    let scalar = libhdf5.h5s_create(S_SCALAR)
+    test.assert(scalar >= 0)
+    test.assert(libhdf5.h5s_get_simple_extent_ndims(scalar) as i32 == 0)
+    test.assert(libhdf5.h5s_get_simple_extent_npoints(scalar) == 1)
+    test.assert(libhdf5.h5s_close(scalar) as i32 >= 0)
+
+    let dims = one_dim(ELEMENT_COUNT)
+    let simple = libhdf5.h5s_create_simple(1, dims, 0)
+    test.assert(simple >= 0)
+    test.assert(libhdf5.h5s_get_simple_extent_ndims(simple) as i32 == 1)
+    test.assert(libhdf5.h5s_get_simple_extent_npoints(simple) == ELEMENT_COUNT)
+    let got = ptr.alloc(8)
+    test.assert(libhdf5.h5s_get_simple_extent_dims(simple, got, 0) as i32 == 1)
+    test.assert(ptr.read_word(got) == ELEMENT_COUNT)
+    test.assert(libhdf5.h5s_close(simple) as i32 >= 0)
+    // A dataspace is memory, so the class of a simple one is 1 whether
+    // or not it has ever belonged to a file.
+    test.assert(S_SIMPLE == 1)
+    ptr.free(got)
+    ptr.free(dims)
+
+// A fixed-length string datatype is built, sized, copied and compared.
+@test
+fn test_a_string_datatype_is_built_sized_and_compared() [io, fs, ffi]
+    test.case("H5Tcreate, H5Tset_size, H5Tget_size, H5Tget_class, H5Tcopy, H5Tequal")
+    let t = libhdf5.h5t_create(T_STRING, 1)
+    test.assert(t >= 0)
+    test.assert(libhdf5.h5t_set_size(t, ELEMENT_SIZE) as i32 >= 0)
+    test.assert(libhdf5.h5t_get_size(t) == ELEMENT_SIZE)
+    test.assert(libhdf5.h5t_get_class(t) as i32 == T_STRING)
+    let copy = libhdf5.h5t_copy(t)
+    test.assert(copy >= 0)
+    test.assert(libhdf5.h5t_equal(t, copy) as i32 == 1)
+    // A copy resized is no longer the same type.
+    test.assert(libhdf5.h5t_set_size(copy, ELEMENT_SIZE + 1) as i32 >= 0)
+    test.assert(libhdf5.h5t_equal(t, copy) as i32 == 0)
+    test.assert(libhdf5.h5t_close(copy) as i32 >= 0)
+    test.assert(libhdf5.h5t_close(t) as i32 >= 0)
+
+// A file is created, recognised by its signature, reopened and measured.
+@test
+fn test_a_file_is_created_recognised_and_measured() [io, fs, ffi]
+    test.case("H5Fcreate, H5Fis_hdf5, H5Fopen, H5Fflush, H5Fget_filesize, H5Fclose")
+    let file_path = scratch_file("file.h5")
+    let made = libhdf5.h5f_create(file_path, ACC_TRUNC, DEFAULT, DEFAULT)
+    test.assert(made >= 0)
+    test.assert(libhdf5.h5f_flush(made, SCOPE_LOCAL) as i32 >= 0)
+    test.assert(libhdf5.h5f_close(made) as i32 >= 0)
+    test.assert(libhdf5.h5f_is_hdf5(file_path) as i32 == 1)
+
+    let file = libhdf5.h5f_open(file_path, ACC_RDONLY, DEFAULT)
+    test.assert(file >= 0)
+    let size = ptr.alloc_word()
+    test.assert(libhdf5.h5f_get_filesize(file, size) as i32 >= 0)
+    // An empty HDF5 file is still a superblock and a root group.
+    test.assert(ptr.read_word(size) > 0)
+    test.assert(libhdf5.h5f_close(file) as i32 >= 0)
+    ptr.free(size)
+    let _gone = fs.delete(file_path)
+
+// A group is created below the root, found by name, and removed again.
+@test
+fn test_a_group_is_created_found_and_removed() [io, fs, ffi]
+    test.case("H5Gcreate2, H5Gopen2, H5Lexists, H5Ldelete, H5Gclose")
+    let file_path = scratch_file("groups.h5")
+    let file = libhdf5.h5f_create(file_path, ACC_TRUNC, DEFAULT, DEFAULT)
+    let made = libhdf5.h5g_create2(file, "measurements", DEFAULT, DEFAULT, DEFAULT)
+    test.assert(made >= 0)
+    test.assert(libhdf5.h5g_close(made) as i32 >= 0)
+    test.assert(libhdf5.h5l_exists(file, "measurements", DEFAULT) as i32 == 1)
+    test.assert(libhdf5.h5l_exists(file, "absent", DEFAULT) as i32 == 0)
+    let opened = libhdf5.h5g_open2(file, "measurements", DEFAULT)
+    test.assert(opened >= 0)
+    test.assert(libhdf5.h5g_close(opened) as i32 >= 0)
+    test.assert(libhdf5.h5l_delete(file, "measurements", DEFAULT) as i32 >= 0)
+    test.assert(libhdf5.h5l_exists(file, "measurements", DEFAULT) as i32 == 0)
+    test.assert(libhdf5.h5f_close(file) as i32 >= 0)
+    let _gone = fs.delete(file_path)
+
+// Three four-byte strings are written to a dataset and read back, with
+// the datatype the file itself reports.
+@test
+fn test_a_string_dataset_round_trips() [io, fs, ffi]
+    test.case("H5Dcreate2, H5Dwrite, H5Dopen2, H5Dget_type, H5Dget_space, H5Dread")
+    let file_path = scratch_file("strings.h5")
+    let file = libhdf5.h5f_create(file_path, ACC_TRUNC, DEFAULT, DEFAULT)
+    let t = string_type()
+    let dims = one_dim(ELEMENT_COUNT)
+    let space = libhdf5.h5s_create_simple(1, dims, 0)
+    let dset = libhdf5.h5d_create2(file, "words", t, space, DEFAULT, DEFAULT, DEFAULT)
+    test.assert(dset >= 0)
+    let buf = ptr.alloc(ELEMENT_SIZE * ELEMENT_COUNT)
+    let _written = ptr.write_bytes_buf(buf, bytes.from_str(CONTENT))
+    test.assert(libhdf5.h5d_write(dset, t, S_ALL, S_ALL, DEFAULT, buf) as i32 >= 0)
+    test.assert(libhdf5.h5d_close(dset) as i32 >= 0)
+    test.assert(libhdf5.h5f_close(file) as i32 >= 0)
+
+    let back = libhdf5.h5f_open(file_path, ACC_RDONLY, DEFAULT)
+    let read_dset = libhdf5.h5d_open2(back, "words", DEFAULT)
+    test.assert(read_dset >= 0)
+    // The datatype and the dataspace come out of the file, which is how
+    // a program that did not create the dataset reads it.
+    let file_type = libhdf5.h5d_get_type(read_dset)
+    test.assert(libhdf5.h5t_get_size(file_type) == ELEMENT_SIZE)
+    let file_space = libhdf5.h5d_get_space(read_dset)
+    test.assert(libhdf5.h5s_get_simple_extent_npoints(file_space) == ELEMENT_COUNT)
+    test.assert(libhdf5.h5d_get_storage_size(read_dset) >= ELEMENT_SIZE * ELEMENT_COUNT)
+    let out = ptr.alloc(ELEMENT_SIZE * ELEMENT_COUNT)
+    test.assert(libhdf5.h5d_read(read_dset, file_type, S_ALL, S_ALL, DEFAULT, out) as i32 >= 0)
+    let seen = bytes.to_str(ptr.read_bytes_n(out, ELEMENT_SIZE * ELEMENT_COUNT))
+    test.assert(seen == CONTENT)
+
+    test.assert(libhdf5.h5s_close(file_space) as i32 >= 0)
+    test.assert(libhdf5.h5t_close(file_type) as i32 >= 0)
+    test.assert(libhdf5.h5d_close(read_dset) as i32 >= 0)
+    test.assert(libhdf5.h5f_close(back) as i32 >= 0)
+    test.assert(libhdf5.h5s_close(space) as i32 >= 0)
+    test.assert(libhdf5.h5t_close(t) as i32 >= 0)
+    ptr.free(out)
+    ptr.free(buf)
+    ptr.free(dims)
+    let _gone = fs.delete(file_path)
+
+// A hyperslab reads one element out of the middle of a dataset.
+@test
+fn test_a_hyperslab_reads_one_element() [io, fs, ffi]
+    test.case("H5Sselect_hyperslab then H5Dread")
+    let file_path = scratch_file("slab.h5")
+    let file = libhdf5.h5f_create(file_path, ACC_TRUNC, DEFAULT, DEFAULT)
+    let t = string_type()
+    let dims = one_dim(ELEMENT_COUNT)
+    let space = libhdf5.h5s_create_simple(1, dims, 0)
+    let dset = libhdf5.h5d_create2(file, "words", t, space, DEFAULT, DEFAULT, DEFAULT)
+    let buf = ptr.alloc(ELEMENT_SIZE * ELEMENT_COUNT)
+    let _written = ptr.write_bytes_buf(buf, bytes.from_str(CONTENT))
+    let _wrote = libhdf5.h5d_write(dset, t, S_ALL, S_ALL, DEFAULT, buf)
+
+    // Start at the second element and take one of them.
+    let file_space = libhdf5.h5d_get_space(dset)
+    let start = one_dim(1)
+    let count = one_dim(1)
+    test.assert(libhdf5.h5s_select_hyperslab(file_space, SELECT_SET, start, 0, count, 0) as i32 >= 0)
+    let mem_space = libhdf5.h5s_create(S_SCALAR)
+    let out = ptr.alloc(ELEMENT_SIZE)
+    test.assert(libhdf5.h5d_read(dset, t, mem_space, file_space, DEFAULT, out) as i32 >= 0)
+    test.assert(bytes.to_str(ptr.read_bytes_n(out, ELEMENT_SIZE)) == "xrwo")
+
+    let _a = libhdf5.h5s_close(mem_space)
+    let _b = libhdf5.h5s_close(file_space)
+    let _c = libhdf5.h5s_close(space)
+    let _d = libhdf5.h5t_close(t)
+    let _e = libhdf5.h5d_close(dset)
+    let _f = libhdf5.h5f_close(file)
+    ptr.free(out)
+    ptr.free(count)
+    ptr.free(start)
+    ptr.free(buf)
+    ptr.free(dims)
+    let _gone = fs.delete(file_path)
+
+// An attribute carried beside the root group round-trips whole.
+@test
+fn test_an_attribute_round_trips() [io, fs, ffi]
+    test.case("H5Acreate2, H5Awrite, H5Aopen, H5Aexists, H5Aget_type, H5Aread, H5Aclose")
+    let file_path = scratch_file("attrs.h5")
+    let file = libhdf5.h5f_create(file_path, ACC_TRUNC, DEFAULT, DEFAULT)
+    let t = string_type()
+    let space = libhdf5.h5s_create(S_SCALAR)
+    let attr = libhdf5.h5a_create2(file, "unit", t, space, DEFAULT, DEFAULT)
+    test.assert(attr >= 0)
+    let buf = ptr.alloc(ELEMENT_SIZE)
+    let _written = ptr.write_bytes_buf(buf, bytes.from_str("m/s2"))
+    test.assert(libhdf5.h5a_write(attr, t, buf) as i32 >= 0)
+    test.assert(libhdf5.h5a_close(attr) as i32 >= 0)
+    test.assert(libhdf5.h5a_exists(file, "unit") as i32 == 1)
+    test.assert(libhdf5.h5a_exists(file, "absent") as i32 == 0)
+
+    let opened = libhdf5.h5a_open(file, "unit", DEFAULT)
+    test.assert(opened >= 0)
+    let attr_type = libhdf5.h5a_get_type(opened)
+    test.assert(libhdf5.h5t_get_size(attr_type) == ELEMENT_SIZE)
+    let out = ptr.alloc(ELEMENT_SIZE)
+    test.assert(libhdf5.h5a_read(opened, attr_type, out) as i32 >= 0)
+    test.assert(bytes.to_str(ptr.read_bytes_n(out, ELEMENT_SIZE)) == "m/s2")
+
+    let _a = libhdf5.h5t_close(attr_type)
+    let _b = libhdf5.h5a_close(opened)
+    let _c = libhdf5.h5s_close(space)
+    let _d = libhdf5.h5t_close(t)
+    let _e = libhdf5.h5f_close(file)
+    ptr.free(out)
+    ptr.free(buf)
+    let _gone = fs.delete(file_path)
+
+// An identifier is valid while it is open and not afterwards, and a
+// file opened for reading refuses to be written to.
+@test
+fn test_an_identifier_is_valid_only_while_it_is_open() [io, fs, ffi]
+    test.case("H5Iis_valid, and H5F_ACC_RDWR against a read-only handle")
+    let file_path = scratch_file("valid.h5")
+    let file = libhdf5.h5f_create(file_path, ACC_TRUNC, DEFAULT, DEFAULT)
+    test.assert(libhdf5.h5i_is_valid(file) as i32 == 1)
+    test.assert(libhdf5.h5f_close(file) as i32 >= 0)
+    test.assert(libhdf5.h5i_is_valid(file) as i32 == 0)
+    // -1 was never an identifier, which is a different answer again.
+    let never = libhdf5.h5i_is_valid(0 - 1) as i32
+    test.assert(never <= 0)
+    // The file opens for writing as well, which is what ACC_RDWR is.
+    let again = libhdf5.h5f_open(file_path, ACC_RDWR, DEFAULT)
+    test.assert(again >= 0)
+    test.assert(libhdf5.h5f_close(again) as i32 >= 0)
+    let _gone = fs.delete(file_path)
+
+// A failed call leaves an error stack, which can be printed and
+// emptied, and the library shuts down at the end.
+@test
+fn test_a_failure_leaves_an_error_stack() [io, fs, ffi]
+    test.case("H5Fopen of a missing file, then H5Eprint2, H5Eclear2 and H5close")
+    let file_path = scratch_file("never-written.h5")
+    // A file that does not exist cannot be opened, and cannot be an
+    // HDF5 file either.
+    test.assert(libhdf5.h5f_open(file_path, ACC_RDONLY, DEFAULT) < 0)
+    let unreadable = libhdf5.h5f_is_hdf5(file_path) as i32
+    test.assert(unreadable < 0)
+    // 0 is the standard error stream, which is the only one a program
+    // has an address for.
+    test.assert(libhdf5.h5e_print2(E_DEFAULT, 0) as i32 >= 0)
+    test.assert(libhdf5.h5e_clear2(E_DEFAULT) as i32 >= 0)
+    // Shutting the library down is the last thing the suite does.
+    test.assert(libhdf5.h5_close() as i32 >= 0)
