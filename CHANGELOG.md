@@ -9,6 +9,16 @@ with the pre-1.0 rule that a breaking change bumps the MINOR number.
 
 The documentation and comments in plain prose; no declaration changed.
 
+### Corrected against the HDF5 reference manual
+
+- `H5Iis_valid` answers 0 for a value that was never an identifier. A
+  negative answer is a failure of the call itself.
+- `H5Fget_filesize` answers the size of the entire file rather than of
+  its HDF5 part alone, so a user block at the front is counted in it.
+- `H5Sget_simple_extent_npoints` answers a negative number on failure.
+- `H5Dget_storage_size` answers 0 both when nothing has been written
+  and when the call fails, because `hsize_t` has no negative value.
+
 ## 0.1.0 — 2026-09-16
 
 The first release: forty-six entry points of the HDF5 C library, one
