@@ -9,17 +9,12 @@ are documented in
 This package declares forty-six of that library's entry points to
 novo-lang, one declaration each.
 
-**Status: a binding, not a port.** Every function in this package is a
-declaration of a function in libhdf5. The package contains no logic of
-its own, and it does nothing without the C library installed. The
-forty-six entry points read any HDF5 file and write strings, groups and
-attributes into one; the section "What is not included" says what a
-program still cannot do with them alone, and the first item there is
-the one that matters.
-
-**Unverified.** HDF5 is not installed on the machine where this package
-was written, so the test suite has never been linked. See the "Tests"
-section.
+Every function here is a declaration of a function in libhdf5. The
+package contains no logic of its own, and it does nothing without the C
+library installed. The forty-six entry points read any HDF5 file and
+write strings, groups and attributes into one. The section "What is not
+included" says what a program cannot do with them alone, and the first
+item is the predefined datatypes.
 
 ## What it is
 
@@ -112,10 +107,10 @@ fn main() [io, ffi]
     let _d = libhdf5.h5f_close(file)
 ```
 
-The example is fenced as an illustration rather than a compiled block
-because `novo doc` compiles the blocks in documentation comments and
-not the ones in this file. The same calls are in
-`tests/libhdf5_tests.nv`.
+The fence is `novo ignore`, so the example is listed as an illustration
+rather than compiled. A compiled block links against the C library, and
+HDF5 is not installed everywhere this page is read. The same calls are
+in `tests/libhdf5_tests.nv`.
 
 ## What the package contains
 
@@ -175,8 +170,9 @@ this package offers.
    complete on disk until everything inside it has been closed.
 4. **`H5P_DEFAULT`, `H5S_ALL` and `H5E_DEFAULT` are all 0.** Every
    property list argument in this package is passed as 0.
-5. **The flag and class numbers are numbers**, because the C header
-   spells them as macros and enumerations.
+5. **The flag and class numbers are written as numbers.** The C header
+   spells them as macros and enumerations, and a declaration cannot
+   name either.
 
    | Name | Number | What it means |
    | --- | --- | --- |
@@ -213,7 +209,7 @@ this package offers.
    string, an opaque block, a compound type and an enumeration.
    `H5T_NATIVE_INT` and its neighbours are global variables, so a
    program that writes numbers gets the identifier from a C helper of
-   its own. Rule 10 of "What is not included" says why.
+   its own. The first item of "What is not included" says why.
 10. **A failure prints itself.** HDF5 writes its error stack to the
     standard error stream by default, and the call that turns that off
     takes a function pointer. A program cannot stop it through this
@@ -228,8 +224,8 @@ this package offers.
 ## What is not included
 
 - **The predefined datatypes.** `H5T_NATIVE_INT`, `H5T_IEEE_F64LE` and
-  the rest are C macros over GLOBAL VARIABLES — `H5T_NATIVE_INT` is
-  `(H5OPEN H5T_NATIVE_INT_g)` — and a binding declares functions. A
+  the rest are C macros over global variables. `H5T_NATIVE_INT` is
+  `(H5OPEN H5T_NATIVE_INT_g)`, and a binding declares functions. A
   program that must create a dataset of numbers supplies the identifier
   from a one-line C helper of its own. Reading is unaffected:
   `H5Dget_type` answers the datatype the file already holds.
@@ -266,8 +262,8 @@ read an HDF5 file reads it with libhdf5.
 
 `libnetcdf-sys` is the same arrangement for NetCDF, whose version 4
 format is HDF5 underneath. A program that only needs the NetCDF subset
-— arrays with named dimensions and attributes — has a smaller interface
-there, and one that does not run into the missing datatypes: NetCDF
+— arrays with named dimensions and attributes — has a smaller C API
+there, and one that does not run into the missing datatypes. NetCDF
 names its element types with plain integers.
 
 `parquet-nv` and `arrow-nv` are columnar formats for the same kind of
@@ -276,9 +272,9 @@ the program's own choice.
 
 ## Tests
 
-`tests/libhdf5_tests.nv` holds ten tests written against the
-signatures. They call the C library, so `novo test` needs HDF5
-installed and linkable:
+`tests/libhdf5_tests.nv` holds ten tests over the forty-six entry
+points. They call the C library, so `novo test` needs HDF5 installed
+and linkable:
 
 ```
 novo test tests/libhdf5_tests.nv
@@ -304,29 +300,10 @@ four-byte string on the root group. The last test opens a file that was
 never written, asserts the failure, prints the error stack and shuts
 the library down.
 
-**Unverified.** HDF5 is not installed on the staging machine, so the
-suite has never linked: `novo test` stops at `/usr/bin/ld: cannot find
--lhdf5`. Every assertion above is written from the reference manual and
-none of them has been observed to pass.
-
-## Implementation status
-
-| Group | State |
-| --- | --- |
-| Library and identifiers | Complete. |
-| Error stack | Complete for printing and clearing. |
-| File | Complete for the serial driver. |
-| Group and links | Complete for creating, opening and removing by name. |
-| Dataspace | Complete for the scalar, simple and hyperslab cases. |
-| Dataset | Complete for reading, and for writing a type `H5Tcreate` can build. |
-| Attribute | Complete. |
-| Datatype | Complete for the four classes that can be built from nothing. |
-| Predefined datatypes | Absent. They are global variables, not functions. |
-| Property lists | Absent, and chunking and compression with them. |
-| Iteration | Absent. Every iterator takes a C function pointer. |
-| References and variable-length types | Absent. Left out of the first release. |
-| Parallel interface | Absent. It takes an MPI communicator by value. |
-| High-level interface | Absent. It is a second shared object. |
+HDF5 is not installed on the machine where this package was written, so
+the suite has never linked. `novo test` stops at
+`/usr/bin/ld: cannot find -lhdf5`. Every assertion above is written
+from the reference manual, and none of them has been observed to pass.
 
 ## Licence
 

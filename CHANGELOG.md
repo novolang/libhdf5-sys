@@ -5,6 +5,10 @@ is [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 package follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 with the pre-1.0 rule that a breaking change bumps the MINOR number.
 
+## 0.1.1 — 2026-09-18
+
+The documentation and comments in plain prose; no declaration changed.
+
 ## 0.1.0 — 2026-09-16
 
 The first release: forty-six entry points of the HDF5 C library, one
@@ -37,8 +41,8 @@ The first release: forty-six entry points of the HDF5 C library, one
 ### The package reads a file and cannot create a numeric dataset
 
 HDF5 names its predefined datatypes with macros: `H5T_NATIVE_INT` is
-`(H5OPEN H5T_NATIVE_INT_g)`, and `H5T_NATIVE_INT_g` is a C GLOBAL
-VARIABLE the library fills in when it starts. The same is true of
+`(H5OPEN H5T_NATIVE_INT_g)`, and `H5T_NATIVE_INT_g` is a C global
+variable the library fills in when it starts. The same is true of
 `H5T_IEEE_F64LE` and of every property list class, where
 `H5P_DATASET_CREATE` is `H5P_CLS_DATASET_CREATE_ID_g`. A binding
 declares functions; it cannot read a global variable, so none of those
@@ -79,18 +83,11 @@ the caller lays out with `ptr.write_word`. `herr_t` and `htri_t` are
 both a C `int`, which is 32 bits wide, so an answer is compared with a
 negative number only after `as i32`.
 
-### Not a `0.0.x` interface release
-
-An interface release is the shape whose every `pub fn` body is a
-`todo()`. Every `pub fn` here is an `@ffi` declaration with no body, so
-`novo pkg publish` reads the package as a release with bodies and
-refuses a `0.0.x` version for it. The first release of a bindings
-package is therefore `0.1.0`.
-
 ### Unverified
 
-HDF5 is not installed on the staging machine, so the suite has never
-linked: `novo test` stops at `/usr/bin/ld: cannot find -lhdf5`. The
+HDF5 is not installed on the machine where this package was written,
+so the suite has never linked: `novo test` stops at
+`/usr/bin/ld: cannot find -lhdf5`. The
 declarations were checked against the HDF5 C reference manual, and
 `novo pkg build` type-checks them, which is the whole of what has been
 measured. Treat the package as unmeasured until someone runs the suite
@@ -107,7 +104,7 @@ is one of those globals and there is no way to name one. Chunking and
 compression come with them.
 
 **Everything that iterates.** `H5Literate2`, `H5Ovisit3`, `H5Aiterate2`
-and `H5Tconvert` take a C FUNCTION POINTER, which the novo-lang foreign
+and `H5Tconvert` take a C function pointer, which the novo-lang foreign
 function interface cannot pass. Listing the members of a group is the
 loss a reader will notice first; `H5Lexists` answers for a name a
 program already knows.

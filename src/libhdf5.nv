@@ -16,8 +16,8 @@
 // last case is missed by a comparison against an un-narrowed value.
 //
 // The predefined datatypes — `H5T_NATIVE_INT`, `H5T_IEEE_F64LE` and
-// their neighbours — and the property list classes are C GLOBAL
-// VARIABLES behind macros, not functions, so no declaration can reach
+// their neighbours — and the property list classes are C global
+// variables behind macros, not functions, so no declaration can reach
 // them.  What that leaves a program able to do is the subject of the
 // README's "What is not included".
 //
@@ -56,8 +56,9 @@ fn h5_get_libversion(major: Int, minor: Int, release: Int) -> Int [io, ffi]
 
 // Ask whether an identifier is still open.
 //
-// Answers 1 when it is, 0 when it is not, and a negative number when
-// the value was never an identifier.
+// Answers 1 when it is and 0 when it is not, which includes a value
+// that was never an identifier. A negative number is a failure of the
+// call itself.
 pub @ffi(library = "hdf5", symbol = "H5Iis_valid")
 fn h5i_is_valid(id: Int) -> Int [ffi]
 
@@ -123,8 +124,8 @@ fn h5f_is_hdf5(name: Str) -> Int [io, ffi]
 // Read the size of a file in bytes into a caller-owned slot.
 //
 // `size` is the address of an eight-byte slot. The answer is the size
-// of the whole file, including the parts HDF5 has reserved and not yet
-// used.
+// of the entire file rather than of its HDF5 part alone, so a user
+// block at the front of the file is counted in it.
 pub @ffi(library = "hdf5", symbol = "H5Fget_filesize")
 fn h5f_get_filesize(file_id: Int, size: Int) -> Int [io, ffi]
 
@@ -205,7 +206,8 @@ fn h5s_get_simple_extent_dims(space_id: Int, dims: Int, max_dims: Int) -> Int [f
 
 // Get how many elements a dataspace holds in total.
 //
-// That is the product of its dimensions. A scalar dataspace answers 1.
+// That is the product of its dimensions. A scalar dataspace answers 1
+// and a failure answers a negative number.
 pub @ffi(library = "hdf5", symbol = "H5Sget_simple_extent_npoints")
 fn h5s_get_simple_extent_npoints(space_id: Int) -> Int [ffi]
 
@@ -279,7 +281,8 @@ fn h5d_get_type(dset_id: Int) -> Int [io, ffi]
 //
 // For a compressed dataset that is the compressed size, so it is
 // smaller than the elements would need in memory. Answers 0 when
-// nothing has been written yet.
+// nothing has been written yet, and 0 on failure as well, because the
+// count is a `hsize_t` and has no negative value to report one with.
 pub @ffi(library = "hdf5", symbol = "H5Dget_storage_size")
 fn h5d_get_storage_size(dset_id: Int) -> Int [io, ffi]
 
