@@ -204,7 +204,9 @@ fn test_a_string_dataset_round_trips() [io, fs, ffi]
     ptr.free(dims)
     let _gone = fs.delete(file_path)
 
-// A hyperslab reads one element out of the middle of a dataset.
+// A hyperslab reads one element out of the middle of a dataset.  The
+// content is three four-byte elements, so the second one starts at byte 4
+// and reads "rwox".
 @test
 fn test_a_hyperslab_reads_one_element() [io, fs, ffi]
     test.case("H5Sselect_hyperslab then H5Dread")
@@ -226,7 +228,7 @@ fn test_a_hyperslab_reads_one_element() [io, fs, ffi]
     let mem_space = libhdf5.h5s_create(S_SCALAR)
     let out = ptr.alloc(ELEMENT_SIZE)
     test.assert((libhdf5.h5d_read(dset, t, mem_space, file_space, DEFAULT, out) as i32) >= 0)
-    test.assert(bytes.to_str(ptr.read_bytes_n(out, ELEMENT_SIZE)) == "xrwo")
+    test.assert(bytes.to_str(ptr.read_bytes_n(out, ELEMENT_SIZE)) == "rwox")
 
     let _a = libhdf5.h5s_close(mem_space)
     let _b = libhdf5.h5s_close(file_space)
