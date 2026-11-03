@@ -1,6 +1,6 @@
 [package]
 name        = "libhdf5-sys"
-version     = "0.1.1"
+version     = "0.1.2"
 description = "Bindings over libhdf5, the HDF5 C library: the library itself, the error stack, the file, the group and its links, the dataspace with its hyperslab, the dataset, the attribute and the datatype, one declaration per C entry point."
 license     = "Apache-2.0"
 
@@ -23,7 +23,7 @@ wraps       = "libhdf5"
 tags        = ["ffi", "hdf5", "h5", "scientific-data", "file-format", "bindings"]
 repository  = "https://github.com/novolang/libhdf5-sys"
 maintainers = ["novo-lang"]
-novo        = ">= 0.8.9"
+novo        = ">= 0.23.0"
 
 [docs.pages]
 "README.md" = "The C entry points of libhdf5, one novo-lang declaration each"
